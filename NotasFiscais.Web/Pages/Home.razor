@@ -1,0 +1,194 @@
+@page "/"
+@inject INotaFiscalApiService NotaFiscalApiService
+
+<PageTitle>Notas Fiscais</PageTitle>
+
+<h1 class="mb-4">Notas Fiscais</h1>
+
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Cadastrar Nova Nota</h5>
+    </div>
+    <div class="card-body">
+        <EditForm Model="@formulario" OnValidSubmit="CadastrarNota">
+            <DataAnnotationsValidator />
+
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Número da Nota *</label>
+                    <InputText class="form-control" @bind-Value="formulario.Numero" placeholder="Ex: NF-001" />
+                    <ValidationMessage For="@(() => formulario.Numero)" class="text-danger small" />
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Cliente *</label>
+                    <InputText class="form-control" @bind-Value="formulario.Cliente" placeholder="Nome do cliente" />
+                    <ValidationMessage For="@(() => formulario.Cliente)" class="text-danger small" />
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Valor (R$) *</label>
+                    <InputNumber class="form-control" @bind-Value="formulario.Valor" placeholder="0,00" />
+                    <ValidationMessage For="@(() => formulario.Valor)" class="text-danger small" />
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Data de Emissão *</label>
+                    <InputDate class="form-control" @bind-Value="formulario.DataEmissao" />
+                    <ValidationMessage For="@(() => formulario.DataEmissao)" class="text-danger small" />
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(mensagemErro))
+            {
+                <div class="alert alert-danger mt-3 mb-0">@mensagemErro</div>
+            }
+
+            @if (!string.IsNullOrEmpty(mensagemSucesso))
+            {
+                <div class="alert alert-success mt-3 mb-0">@mensagemSucesso</div>
+            }
+
+            <div class="mt-3">
+                <button type="submit" class="btn btn-primary" disabled="@cadastrando">
+                    @(cadastrando ? "Cadastrando..." : "Cadastrar Nota")
+                </button>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Notas Cadastradas</h5>
+        <div class="d-flex gap-2">
+            <input class="form-control form-control-sm"
+                   style="width: 220px"
+                   @bind="termoBuscaCliente"
+                   @bind:event="oninput"
+                   placeholder="Filtrar por cliente..." />
+            <button class="btn btn-outline-secondary btn-sm" @onclick="AlternarOrdenacaoPorValor">
+                Valor @(ordenarDecrescente ? "▼" : "▲")
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        @if (carregando)
+        {
+            <p class="text-center py-3">Carregando...</p>
+        }
+        else if (!NotasFiltradas.Any())
+        {
+            <p class="text-center text-muted py-3">Nenhuma nota encontrada.</p>
+        }
+        else
+        {
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Número</th>
+                        <th>Cliente</th>
+                        <th>Valor</th>
+                        <th>Data de Emissão</th>
+                        <th>Cadastrado em</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var nota in NotasFiltradas)
+                    {
+                        <tr>
+                            <td>@nota.Numero</td>
+                            <td>@nota.Cliente</td>
+                            <td>@nota.ValorFormatado</td>
+                            <td>@nota.DataEmissao</td>
+                            <td>@nota.DataHoraCadastro</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@code {
+    private List<NotaFiscalViewModel> todasAsNotas = [];
+    private CriarNotaFiscalForm formulario = new();
+    private string termoBuscaCliente = string.Empty;
+    private bool ordenarDecrescente = false;
+    private bool carregando = true;
+    private bool cadastrando = false;
+    private string mensagemErro = string.Empty;
+    private string mensagemSucesso = string.Empty;
+
+    private IEnumerable<NotaFiscalViewModel> NotasFiltradas
+    {
+        get
+        {
+            var notas = todasAsNotas.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(termoBuscaCliente))
+                notas = notas.Where(n => n.Cliente.Contains(termoBuscaCliente, StringComparison.OrdinalIgnoreCase));
+
+            return ordenarDecrescente
+                ? notas.OrderByDescending(n => n.Valor)
+                : notas.OrderBy(n => n.Valor);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarNotas();
+    }
+
+    private async Task CarregarNotas()
+    {
+        carregando = true;
+        try
+        {
+            todasAsNotas = await NotaFiscalApiService.ListarTodasAsync();
+        }
+        catch
+        {
+            mensagemErro = "Não foi possível carregar as notas. Verifique se a API está rodando.";
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    private async Task CadastrarNota()
+    {
+        cadastrando = true;
+        mensagemErro = string.Empty;
+        mensagemSucesso = string.Empty;
+        try
+        {
+            var sucesso = await NotaFiscalApiService.CadastrarAsync(formulario);
+
+            if (sucesso)
+            {
+                mensagemSucesso = "Nota fiscal cadastrada com sucesso!";
+                formulario = new CriarNotaFiscalForm();
+                await CarregarNotas();
+            }
+            else
+            {
+                mensagemErro = "Erro ao cadastrar a nota. Verifique os dados e tente novamente.";
+            }
+        }
+        catch
+        {
+            mensagemErro = "Não foi possível conectar com a API. Verifique se ela está rodando.";
+        }
+        finally
+        {
+            cadastrando = false;
+        }
+    }
+
+    private void AlternarOrdenacaoPorValor()
+    {
+        ordenarDecrescente = !ordenarDecrescente;
+    }
+}
